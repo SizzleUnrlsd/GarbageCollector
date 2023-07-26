@@ -1,34 +1,39 @@
-##
-## EPITECH PROJECT, 2023
-## B-PSU-100-RUN-1-1-bsnavy-hugo.payet
-## File description:
-## Makefile
-##
+# Copyright (C) 2023 hugo
+# 
+# This file is part of GarbageCollector.
+# 
+# GarbageCollector is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# GarbageCollector is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with GarbageCollector.  If not, see <http://www.gnu.org/licenses/>.
 
-SRC	=	main.c
+TARGET = garbage-collector
 
-LIB	=	$(wildcard lib/*.c)
+CC = gcc
 
-OBJ	=	$(SRC:.c=.o)
+CFLAGS = -Wall -Wextra -Ilib -Wno-unknown-pragmas -Wno-frame-address
 
-NAME	=	garbage_collector
+SRC_DIR = src
 
-FLAGS 	=	-W -Wall -Wextra -Werror -g3
+SRCS = $(wildcard $(SRC_DIR)/*.c)
 
-MEMORY_FLAGS	=	-Wpadded
+OBJS = $(SRCS:.c=.o)
 
-all	:	$(OBJ)
-	gcc -o $(NAME) $(FLAGS) $(SRC) $(LIB) $(MEMORY_FLAGS)
+all: $(TARGET)
 
-clean	:
-	rm -f $(OBJ)
-	rm -f a.out
-	rm -f *.gcno
-	rm -f *.gcda
-	rm -f *.c~
-	rm -f *.o
+$(TARGET): $(OBJS) main.o
+	$(CC) $(CFLAGS) $(OBJS) main.o -o $(TARGET)
 
-fclean	: clean
-	rm -f $(NAME)
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-re	: fclean all
+clean:
+	rm -f $(OBJS) main.o $(TARGET)
