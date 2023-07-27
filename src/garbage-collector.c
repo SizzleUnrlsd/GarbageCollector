@@ -355,7 +355,7 @@ void garbage_stat(void)
         } else {
             printf("Caller Function [%s] -> addr : %p : size : %ld\n",
             allocation_array[i]->caller_function, \
-            allocation_array[i]->ptr,             \
+            (void*)allocation_array[i]->ptr,      \
             allocation_array[i]->size);           \
             if (allocation_array[i]->unreachable == true)
                 printf("IS UNREACHABLE\n");
