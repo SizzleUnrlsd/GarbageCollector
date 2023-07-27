@@ -46,9 +46,15 @@
 
 #define _malloc(__size) _malloc_wrapper(__size, __func__)
 
+#define _mallocbucket(__size) _malloc_wrapper_bucket(__size, __func__)
+
+#define _realloc(__ptr, __size) _realloc_wrapper(__ptr, __size, __func__)
+
 #define _free(ptr) _free_wrapper(ptr)
 
 #define garbage_backup_ptr(ptr) get_ptr(ptr, __func__)
+
+#define garbage_backup_bucket_ptr(ptr) get_ptr_bucket(ptr, __func__)
 
 #define DUMP(varname) #varname;
 
@@ -61,6 +67,7 @@ typedef struct allocation_block_s {
     size_t limit_size;
     uint32_t counter;
     bool unreachable;
+    bool bucket;
 } allocation_block_t;
 #pragma pop
 
@@ -71,9 +78,15 @@ typedef struct allocation_block_s {
 
 _wur void *_malloc_wrapper(size_t __size, const char *caller_function);
 
+_wur void *_malloc_wrapper_bucket(size_t __size, const char *caller_function);
+
+_wur void *_realloc_wrapper(void *__ptr, size_t __size, const char *caller_function);
+
 void _free_wrapper(void *ptr);
 
 extern void get_ptr(void *ptr, const char *caller_function);
+
+extern void get_ptr_bucket(void *ptr, const char *caller_function);
 
 extern void garbage_constructor(void);
 

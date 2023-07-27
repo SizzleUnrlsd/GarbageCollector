@@ -21,7 +21,7 @@
 
 char *foo(const char *str)
 {
-    unused void *ptr = (void*)_malloc(sizeof(void*));
+    unused void *ptr = (void*)_mallocbucket(sizeof(void*));
 
     return strdup(str);
 }

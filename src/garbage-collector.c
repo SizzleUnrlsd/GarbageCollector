@@ -49,6 +49,12 @@ __attribute__((visibility("hidden"))) GB_DESTRUCTOR void garbage_destructor(void
             allocation_array[i]->ptr = NULL;
             leak_memory++;
         }
+        if (allocation_array[i]->bucket == true) {
+            allocation_array[i]->unreachable = true;
+            allocation_array[i]->caller_function = NULL;
+            free(allocation_array[i]->ptr);
+            allocation_array[i]->ptr = NULL;
+        }
     }
     if (0 != leak_memory)
         printf("%d memory leaks have been detected\nGarbage has them free\n", leak_memory);
@@ -76,13 +82,13 @@ _malloc_wrapper(size_t __size, const char *caller_function)
         return NULL;
     }
 
-    void *ptr = malloc(sizeof(__size));
+    void *ptr = malloc(__size);
     if (!ptr) {
         _set_errno(ENOMEM);
         exit(ENOMEM);
     }
 
-    allocation_array[counter] = malloc(sizeof(allocation_block_t));
+    allocation_array[counter] = (allocation_block_t*)malloc(sizeof(allocation_block_t));
     if (!allocation_array[counter]) {
         _set_errno(ENOMEM);
         exit(ENOMEM);
@@ -95,6 +101,7 @@ _malloc_wrapper(size_t __size, const char *caller_function)
     allocation_array[counter]->limit_size = malloc_usable_size(ptr);
     allocation_array[counter]->counter = counter;
     allocation_array[counter]->unreachable = false;
+    allocation_array[counter]->bucket = false;
 
     /* Increment index */
     counter++;
@@ -102,6 +109,87 @@ _malloc_wrapper(size_t __size, const char *caller_function)
     /* Assign next to NULL */
     allocation_array[counter + 1] = NULL;
     return ptr;
+}
+
+_wur void *
+_malloc_wrapper_bucket(size_t __size, const char *caller_function)
+{
+    void *parent_frame = ADDR_FRAME_PARENT_FUNCTION;
+
+    if (__size == 0 && caller_function == NULL) {
+        counter++;
+        return NULL;
+    }
+
+    void *ptr = malloc(__size);
+    if (!ptr) {
+        _set_errno(ENOMEM);
+        exit(ENOMEM);
+    }
+
+    allocation_array[counter] = (allocation_block_t*)malloc(sizeof(allocation_block_t));
+    if (!allocation_array[counter]) {
+        _set_errno(ENOMEM);
+        exit(ENOMEM);
+    }
+
+    allocation_array[counter]->addr_frame = (uintptr_t*)parent_frame;
+    allocation_array[counter]->ptr = (uintptr_t*)ptr;
+    allocation_array[counter]->caller_function = caller_function;
+    allocation_array[counter]->size = __size;
+    allocation_array[counter]->limit_size = malloc_usable_size(ptr);
+    allocation_array[counter]->counter = counter;
+    allocation_array[counter]->unreachable = false;
+    allocation_array[counter]->bucket= true;
+
+    /* Increment index */
+    counter++;
+
+    /* Assign next to NULL */
+    allocation_array[counter + 1] = NULL;
+    return ptr;
+}
+
+_wur void *
+_realloc_wrapper(void *__ptr, size_t __size, const char *caller_function)
+{
+    void *ptr = NULL;
+    bool known = false;
+    uint32_t i = 0;
+
+    if (__ptr == NULL)
+        return NULL;
+
+    /* Check if a ptr is known */
+    for (; allocation_array[i]; ++i) {
+        if (allocation_array[i]->ptr == (uintptr_t*)__ptr) {
+            known = true;
+            break;
+        }
+    }
+
+    if (known == true) {
+        ptr = (void*)realloc(__ptr, __size);
+        if (!ptr) {
+            _set_errno(ENOMEM);
+            exit(ENOMEM);
+        }
+        if ((uintptr_t*)ptr == allocation_array[i]->ptr) {
+            return ptr;
+        } else {
+            allocation_array[i]->ptr = NULL;
+            allocation_array[i]->ptr = ptr;
+            return ptr;
+        }
+    } else {
+        ptr = (void*)realloc(__ptr, __size);
+        if (!ptr) {
+            _set_errno(ENOMEM);
+            exit(ENOMEM);
+        }
+        get_ptr_bucket(ptr, caller_function);
+        return ptr;
+    }
 }
 
 void
@@ -113,9 +201,10 @@ _free_wrapper(void *ptr)
 
     for (uint32_t i = 0; allocation_array[i]; i++) {
         allocation_block_t *_ptr_object = allocation_array[i];
-        if (ptr == _ptr_object->ptr) {
+        if (ptr == _ptr_object->ptr && _ptr_object->bucket == false) {
             _ptr_object->ptr = NULL;
             _ptr_object->unreachable = false;
+            _ptr_object->bucket = false;
             free(ptr);
             ptr = NULL;
         }
@@ -150,6 +239,43 @@ void get_ptr(void *ptr, const char *caller_function)
     allocation_array[counter]->limit_size = malloc_usable_size((void*)p);
     allocation_array[counter]->counter = counter;
     allocation_array[counter]->unreachable = false;
+    allocation_array[counter]->bucket = false;
+
+    /* Increment index */
+    counter++;
+
+    /* Assign next to NULL */
+    allocation_array[counter + 1] = NULL;
+    return;
+}
+
+void get_ptr_bucket(void *ptr, const char *caller_function)
+{
+    uintptr_t *p = (uintptr_t*)ptr;
+    void *parent_frame = ADDR_FRAME_PARENT_FUNCTION;
+
+    for (uint32_t i = 0; allocation_array[i]; ++i) {
+        /* Check if it's the same address */
+        if (ptr == allocation_array[i]->ptr)
+            return;
+        if (counter <= allocation_array[i]->counter)
+            counter = allocation_array[i]->counter;
+    }
+
+    allocation_array[counter] = malloc(sizeof(allocation_block_t));
+    if (!allocation_array[counter]) {
+        _set_errno(ENOMEM);
+        exit(ENOMEM);
+    }
+
+    allocation_array[counter]->addr_frame = (uintptr_t*)parent_frame;
+    allocation_array[counter]->ptr = p;
+    allocation_array[counter]->caller_function = caller_function;
+    allocation_array[counter]->size = sizeof(p);
+    allocation_array[counter]->limit_size = malloc_usable_size((void*)p);
+    allocation_array[counter]->counter = counter;
+    allocation_array[counter]->unreachable = false;
+    allocation_array[counter]->bucket = true;
 
     /* Increment index */
     counter++;
@@ -175,7 +301,7 @@ sweep(void)
 {
     for (uint32_t i = 0; allocation_array[i]; ++i) {
         allocation_block_t *_ptr_object = allocation_array[i];
-        if (_ptr_object->ptr != NULL && _ptr_object->unreachable == true) {
+        if (_ptr_object->ptr != NULL && _ptr_object->unreachable == true && _ptr_object->bucket == false) {
             printf("Garbage Free %p pointer ", _ptr_object->ptr);
             printf("Allocated to `%s` function\n", _ptr_object->caller_function);
             _ptr_object->unreachable = false;
